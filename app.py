@@ -1,19 +1,19 @@
-#Version: 1.0.1
+# Version: 1.0.1
 import os
-import re
 import csv
+import tempfile
 from io import StringIO
+
 from flask import Flask, render_template, request, jsonify, send_from_directory, send_file
 from flask_cors import CORS
 from pydub import AudioSegment
-import tempfile
 
 app = Flask(__name__)
 CORS(app)
 
 # Global variables for playlist management
 current_directory = None
-current_playlist = [] # Stores full paths on server
+current_playlist = []  # Stores full paths on server
 audio_file_map = {}  # Maps filename to full path for nested directories
 SUPPORTED_AUDIO_EXTENSIONS = ('.mp3', '.wav', '.ogg')
 
@@ -52,6 +52,9 @@ def parse_log_content(log_content):
     delimiter = '\t' if tab_count > comma_count else ','
     reader = csv.reader(StringIO(log_content), delimiter=delimiter)
     header = next(reader, None)
+    if not header:
+        return data
+
     # Find relevant column indices
     def col(name):
         try:
@@ -65,8 +68,20 @@ def parse_log_content(log_content):
     col_short_error = col('shortFormError')
     col_short_start = col('shortFormStart')
     col_short_end = col('shortFormEnd')
+    required_columns = [
+        col_audio,
+        col_long_start,
+        col_long_end,
+        col_long_error,
+        col_short_error,
+        col_short_start,
+        col_short_end,
+    ]
+    if any(index is None for index in required_columns):
+        return data
+
     for row in reader:
-        if not row or len(row) <= max(filter(None, [col_audio, col_long_start, col_long_end, col_long_error, col_short_error, col_short_start, col_short_end])):
+        if not row or len(row) <= max(required_columns):
             continue
         audio_path = row[col_audio]
         filename = os.path.basename(audio_path)
@@ -102,7 +117,7 @@ def serve_audio_file(filename):
         directory = os.path.dirname(file_path)
         file_name = os.path.basename(file_path)
         return send_from_directory(directory, file_name)
-    
+
     # Fallback to old behavior for flat directory structure
     elif current_directory and os.path.exists(os.path.join(current_directory, filename)):
         return send_from_directory(current_directory, filename)
